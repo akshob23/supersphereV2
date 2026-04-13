@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperSphere</title>
+ <link rel="icon" type="image/x-icon" href="earth.webp">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3a 100%);
+    color: #fff;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+.screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0,0,0,0.9);
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s;
+}
+.screen.active { opacity: 1; pointer-events: all; }
+#intro h1 { font-size: 4rem; text-shadow: 0 0 30px #00ff88; animation: glow 2s infinite; }
+@keyframes glow { 50% { text-shadow: 0 0 50px #00ff88, 0 0 100px #00ff88; } }
+button {
+    padding: 15px 40px;
+    font-size: 1.2rem;
+    background: linear-gradient(45deg, #00ff88, #00ccff);
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: transform 0.3s, box-shadow 0.3s;
+    color: #000;
+    font-weight: bold;
+}
+button:hover { transform: scale(1.1); box-shadow: 0 0 30px #00ff88; }
+#stars { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 40px;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+}
+#year { font-size: 1.5rem; color: #00ff88; }
+.container { display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
+.panel {
+    flex: 1;
+    min-width: 250px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 15px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+}
+.panel h3 { color: #00ff88; margin-bottom: 15px; }
+.panel button {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+    padding: 12px;
+    font-size: 1rem;
+}
+.bar {
+    height: 25px;
+    background: rgba(255,255,255,0.2);          
+    border-radius: 15px;
+    margin: 10px 0;
+    overflow: hidden;
+}
+.bar > div {
+    height: 100%;
+    border-radius: 15px;
+    transition: width 0.5s;
+}
+#pollutionBar { background: linear-gradient(90deg, #00ff88, #ff4444); }
+#forestBar { background: linear-gradient(90deg, #ff4444, #00ff88); }
+#bioBar { background: linear-gradient(90deg, #00ccff, #00ff88); }
+#planet3D { width: 100%; height: 300px; }
+#chart { width: 100% !important; height: 200px !important; }
+#ai { font-style: italic; color: #aaa; }
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+
+<div id="intro" class="screen active">
+<h1>SuperSphere</h1>
+<p>Ultimate Simulation</p>
+<button onclick="startGame()">Start</button>
+</div>
+
+<header>
+<h2>SuperSphere Control</h2>
+<div id="year">Year: 2025</div>
+</header>
+
+<main class="container">
+<section class="panel">
+<h3>Controls</h3>
+<button onclick="solar()">Solar</button>
+<button onclick="factory()">Factory</button>
+<button onclick="plant()">Trees</button>
+<button onclick="banPlastic()">Plastic</button>
+<button onclick="transport()">Transport</button>
+</section>
+
+<section class="panel">
+<h3>3D Planet</h3>
+<div id="planet3D"></div>
+</section>
+
+<section class="panel">
+<h3>Stats</h3>
+<div class="bar"><div id="pollutionBar" style="width: 50%"></div></div>
+<div class="bar"><div id="forestBar" style="width: 50%"></div></div>
+<div class="bar"><div id="bioBar" style="width: 50%"></div></div>
+<p>Score: <span id="score">0</span></p>
+</section>
+</main>
+
+<section class="container">
+<div class="panel"><canvas id="chart"></canvas></div>
+<div class="panel"><p id="ai">AI: Welcome to SuperSphere! Make wise choices to save the planet.</p></div>
+<div class="panel">
+<p id="mapInfo">Interactive map active</p>
+<canvas id="map" width="250" height="150"></canvas>
+<p id="mapStatus">Click regions to see damage</p>
+</div>
+</section>
+
+<div id="gameOver" class="screen">
+<h1>Planet Destroyed</h1>
+<p id="finalScore"></p>
+<button onclick="location.reload()">Restart</button>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const intro = document.getElementById("intro");
+    const gameOver = document.getElementById("gameOver");
+    const yearLabel = document.getElementById("year");
+    const scoreLabel = document.getElementById("score");
+    const pollutionBar = document.getElementById("pollutionBar");
+    const forestBar = document.getElementById("forestBar");
+    const bioBar = document.getElementById("bioBar");
+    const ai = document.getElementById("ai");
+    const finalScore = document.getElementById("finalScore");
+    const container = document.getElementById("planet3D");
+    let year = 2025;
+    let score = 0;
+    let pollution = 50;
+    let forest = 50;
+    let regionDamage = {
+        "North America": 10,
+        "South America": 15,
+        "Europe": 20,
+        "Africa": 25,
+        "Asia": 30,
+        "Australia": 5
+    };
+    
+    function updateMap() {
+        mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+        mapCtx.fillStyle = "#1a3a5c";
+        mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+        
+        regions.forEach(region => {
+            const damage = regionDamage[region.name];
+            const green = Math.max(0, 255 - damage * 2.55);
+            const red = Math.min(255, damage * 2.55);
+            mapCtx.fillStyle = `rgb(${red}, ${green}, 50)`;
+            mapCtx.fillRect(region.x, region.y, region.w, region.h);
+            mapCtx.strokeStyle = "#fff";
+            mapCtx.lineWidth = 1;
+            mapCtx.strokeRect(region.x, region.y, region.w, region.h);
+        });
+    }
+    
+    function applyRegionDamage(actionType) {
+        const multipliers = {
+            "solar": { "Asia": -3, "North America": -2, "Europe": -2, "Africa": -1, "South America": -1, "Australia": -1 },
+            "factory": { "Asia": 8, "Europe": 5, "North America": 4, "Africa": 3, "South America": 2, "Australia": 1 },
+            "plant": { "South America": 4, "Africa": 3, "Asia": 2, "North America": 2, "Europe": 1, "Australia": 1 },
+            "banPlastic": { "Asia": -4, "North America": -3, "Europe": -3, "Africa": -2, "South America": -2, "Australia": -1 },
+            "transport": { "Europe": 4, "Asia": 3, "North America": 3, "Africa": 1, "South America": 1, "Australia": 0 }
+        };
+        
+        const mult = multipliers[actionType] || {};
+        for (let region in regionDamage) {
+            if (mult[region]) {
+                regionDamage[region] = clamp(regionDamage[region] + mult[region]);
+            }
+        }
+    }
+    let biodiversity = 50;
+    let gameActive = false;
+    let yearInterval;
+    let pollutionInterval;
+
+    function clamp(value) {
+        return Math.min(100, Math.max(0, value));
+    }
+
+    function updatePlanetColor() {
+        const t = pollution / 100;
+        const color = new THREE.Color(0x44aaff);
+        color.lerp(new THREE.Color(0x8b4513), t);
+        sphere.material.color.set(color);
+    }
+
+    function updateUI() {
+        yearLabel.textContent = `Year: ${year}`;
+        scoreLabel.textContent = score;
+        pollutionBar.style.width = `${pollution}%`;
+        forestBar.style.width = `${forest}%`;
+        bioBar.style.width = `${biodiversity}%`;
+        updatePlanetColor();
+        updateChart();
+    }
+
+    function endGame() {
+        gameActive = false;
+        clearInterval(yearInterval);
+        clearInterval(pollutionInterval);
+        gameOver.classList.add("active");
+        finalScore.textContent = `Final score: ${score}`;
+        document.querySelectorAll("section.panel button").forEach((button) => {
+            button.disabled = true;
+        });
+    }
+
+    function checkGameOver() {
+        if (pollution >= 100 || forest <= 0 || biodiversity <= 0) {
+            endGame();
+        }
+    }
+
+    function applyAction(deltaP, deltaF, deltaB, message) {
+        pollution = clamp(pollution + deltaP);
+        forest = clamp(forest + deltaF);
+        biodiversity = clamp(biodiversity + deltaB);
+        score = Math.max(0, score + deltaF - deltaP + deltaB);
+        year += 1;
+        ai.textContent = message;
+        updateUI();
+        checkGameOver();
+    }
+
+    window.startGame = function () {
+        intro.classList.remove("active");
+        gameActive = true;
+        updateUI();
+        
+        yearInterval = setInterval(function() {
+            if (gameActive) {
+                year += 1;
+                updateUI();
+                checkGameOver();
+            }
+        }, 2000);
+        
+        pollutionInterval = setInterval(function() {
+            if (gameActive) {
+                pollution = clamp(pollution + 20);
+                ai.textContent = "Warning: Pollution is increasing! Take action!";
+                updateUI();
+                checkGameOver();
+            }
+        }, 20000);
+    };
+
+    window.solar = function () {
+        applyAction(-12, 6, 4, "Solar energy reduces pollution and improves biodiversity.");
+    };
+
+    window.factory = function () {
+        applyAction(15, -10, -8, "Factory growth increases pollution and damages nature.");
+    };
+
+    window.plant = function () {
+        applyAction(-8, 12, 10, "Planting trees boosts forests and biodiversity.");
+    };
+
+    window.banPlastic = function () {
+        applyAction(-15, 4, 6, "Plastic bans lower pollution and help the planet.");
+    };
+
+    window.transport = function () {
+        applyAction(5, -4, 2, "Transportation changes affect pollution and environment.");
+    };
+
+    const mapCanvas = document.getElementById("map");
+    const mapCtx = mapCanvas.getContext("2d");
+    const mapStatus = document.getElementById("mapStatus");
+    
+    const regions = [
+        { name: "North America", x: 50, y: 40, w: 60, h: 40, damage: 0 },
+        { name: "South America", x: 70, y: 90, w: 40, h: 50, damage: 0 },
+        { name: "Europe", x: 130, y: 35, w: 35, h: 30, damage: 0 },
+        { name: "Africa", x: 130, y: 70, w: 50, h: 55, damage: 0 },
+        { name: "Asia", x: 170, y: 30, w: 70, h: 60, damage: 0 },
+        { name: "Australia", x: 190, y: 100, w: 35, h: 30, damage: 0 }
+    ];
+    
+    function updateMap() {
+        mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+        mapCtx.fillStyle = "#1a3a5c";
+        mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+        
+        regions.forEach(region => {
+            region.damage = (pollution / 100) * 100;
+            const green = Math.max(0, 255 - region.damage * 2.55);
+            const red = Math.min(255, region.damage * 2.55);
+            mapCtx.fillStyle = `rgb(${red}, ${green}, 50)`;
+            mapCtx.fillRect(region.x, region.y, region.w, region.h);
+            mapCtx.strokeStyle = "#fff";
+            mapCtx.lineWidth = 1;
+            mapCtx.strokeRect(region.x, region.y, region.w, region.h);
+        });
+    }
+    
+    mapCanvas.addEventListener("click", function(e) {
+        const rect = mapCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        regions.forEach(region => {
+            if (x >= region.x && x <= region.x + region.w && y >= region.y && y <= region.y + region.h) {
+                const damageLevel = Math.round(region.damage);
+                mapStatus.textContent = `${region.name}: ${damageLevel}% damaged`;
+            }
+        });
+    });
+
+    const ctx = document.getElementById("chart").getContext("2d");
+    const chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels: ["Pollution", "Forest", "Biodiversity"],
+            datasets: [{
+                label: "Planet Health",
+                data: [pollution, forest, biodiversity],
+                backgroundColor: ["#ff4444", "#00ff88", "#00ccff"],
+                borderRadius: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+
+    function updateChart() {
+        chart.data.datasets[0].data = [pollution, forest, biodiversity];
+        chart.update();
+        updateMap();
+    }
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    const geometry = new THREE.SphereGeometry(1.2, 64, 64);
+    const material = new THREE.MeshStandardMaterial({ color: 0x44aaff, roughness: 1, metalness: 0.1 });
+    const sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+
+    const light = new THREE.PointLight(0xffffff, 1.2);
+    light.position.set(5, 5, 5);
+    scene.add(light);
+
+    const ambient = new THREE.AmbientLight(0x404040, 1.2);
+    scene.add(ambient);
+
+    camera.position.z = 3;
+
+    window.addEventListener("resize", function () {
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+    });
+
+    function animate() {
+        sphere.rotation.y += 0.003;
+        sphere.rotation.x += 0.001;
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+
+   
+    updateUI();
+    updateMap();
+    animate();
+    updateMap();
+    animate();
+});
+</script>
+</body>
+</html>
